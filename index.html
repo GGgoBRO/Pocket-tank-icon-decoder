@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PTD Icon Extractor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  background: #1a1a1a;
+  color: #ddd;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+p.sub { color: #666; margin-bottom: 20px; font-size: 12px; }
+
+#dropzone {
+  border: 1.5px dashed #333;
+  border-radius: 6px;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  margin-bottom: 12px;
+  position: relative;
+}
+#dropzone:hover, #dropzone.over { border-color: #555; background: #222; }
+#dropzone input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+#dropzone span { color: #555; font-size: 12px; }
+#dropzone span b { color: #aaa; }
+
+#file-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.file-tag {
+  background: #2a2a2a; border: 1px solid #333; border-radius: 4px;
+  padding: 3px 8px; font-size: 11px; color: #aaa;
+}
+.file-tag.paired { border-color: #3a5; color: #5c5; }
+.file-tag.unpaired { border-color: #853; color: #a75; }
+
+.row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+
+button {
+  padding: 6px 14px; border: 1px solid #333; border-radius: 4px;
+  background: #222; color: #ccc; cursor: pointer; font-size: 13px;
+  transition: background .1s, border-color .1s;
+}
+button:hover:not(:disabled) { background: #2a2a2a; border-color: #555; color: #fff; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+button.primary { background: #2a4a2a; border-color: #3a6a3a; color: #7dca7d; }
+button.primary:hover:not(:disabled) { background: #335533; border-color: #4a8a4a; }
+
+#progress { display: none; margin-bottom: 16px; }
+#progress-bar { height: 2px; background: #333; border-radius: 2px; margin-bottom: 4px; }
+#progress-fill { height: 100%; width: 0; background: #5a5; border-radius: 2px; transition: width .1s; }
+#progress-msg { font-size: 11px; color: #555; }
+
+#bar { display: none; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+#search {
+  flex: 1; min-width: 160px;
+  background: #222; border: 1px solid #333; color: #ccc;
+  padding: 5px 10px; border-radius: 4px; font-size: 13px; outline: none;
+}
+#search:focus { border-color: #555; }
+#stats { font-size: 11px; color: #555; white-space: nowrap; }
+
+#grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 1px; background: #222;
+  border: 1px solid #2a2a2a; border-radius: 6px; overflow: hidden;
+}
+
+.card {
+  background: #1a1a1a; display: flex; flex-direction: column;
+  align-items: center; padding: 10px 6px 6px; cursor: pointer;
+  transition: background .1s; gap: 4px;
+}
+.card:hover { background: #222; }
+.card.sel { background: #1e2a1e; outline: 1px solid #3a5; outline-offset: -1px; }
+
+.thumb {
+  width: 72px; height: 72px;
+  display: flex; align-items: center; justify-content: center;
+  background: repeating-conic-gradient(#222 0% 25%, #1a1a1a 0% 50%) 0 0 / 10px 10px;
+  border-radius: 3px; overflow: hidden;
+}
+.thumb canvas { image-rendering: pixelated; max-width: 72px; max-height: 72px; }
+
+.card-name {
+  font-size: 9px; color: #444; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  width: 100%; padding: 0 4px;
+}
+
+#empty { grid-column: 1/-1; padding: 40px; text-align: center; color: #444; font-size: 12px; }
+
+#modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.85); align-items: center; justify-content: center;
+  z-index: 100; padding: 24px;
+}
+#modal.open { display: flex; }
+.modal-box {
+  background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
+  padding: 20px; display: flex; flex-direction: column; align-items: center;
+  gap: 12px; max-width: 90vw; max-height: 90vh; overflow: auto; position: relative;
+}
+#modal-close {
+  position: absolute; top: 10px; right: 10px;
+  background: none; border: 1px solid #333; color: #666;
+  width: 24px; height: 24px; padding: 0; border-radius: 3px; font-size: 12px;
+}
+#modal-close:hover { border-color: #666; color: #aaa; }
+#modal-name { font-size: 13px; color: #aaa; max-width: 300px; word-break: break-all; text-align: center; }
+#modal-canvas {
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #222 0% 50%) 0 0 / 14px 14px;
+  border-radius: 4px; image-rendering: pixelated;
+  max-width: min(80vw, 512px); max-height: 60vh;
+}
+.modal-meta { font-size: 11px; color: #555; display: flex; gap: 16px; }
+</style>
+</head>
+<body>
+
+<h1>PTD Icon Extractor</h1>
+<p class="sub">Drop any .bbk + .dat pairs. Files with the same base name are decoded together.</p>
+
+<div id="dropzone">
+  <input type="file" accept=".bbk,.dat" multiple id="file-input">
+  <span>Drop <b>.bbk</b> and <b>.dat</b> files here, or click to browse</span>
+</div>
+
+<div id="file-list"></div>
+
+<div class="row">
+  <button class="primary" id="decode-btn" disabled>Decode</button>
+  <button id="export-btn" disabled>Export all as ZIP</button>
+  <button id="export-sel-btn" disabled>Export selected</button>
+  <button id="clear-btn">Clear</button>
+</div>
+
+<div id="progress">
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+  <div id="progress-msg"></div>
+</div>
+
+<div id="bar">
+  <input type="text" id="search" placeholder="Filter by name…">
+  <div id="stats"></div>
+</div>
+
+<div id="grid"></div>
+
+<div id="modal">
+  <div class="modal-box">
+    <button id="modal-close">✕</button>
+    <div id="modal-name"></div>
+    <canvas id="modal-canvas"></canvas>
+    <div class="modal-meta">
+      <span id="modal-size"></span>
+      <span id="modal-bpp"></span>
+      <span id="modal-src"></span>
+    </div>
+    <div class="row" style="margin:0">
+      <button id="dl-btn">Download PNG</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── PTD transform — BBK index only ────────────────────
+function ptdTransform(buf) {
+  const u8 = new Uint8Array(buf.slice(0));
+  const n = u8.length;
+  let mask = 0x03;
+  for (let i = 0; i < n; i++) { u8[i] ^= mask; mask ^= 0x1B; mask &= 0xFF; }
+  const end2 = n - 16;
+  for (let p = 0; p <= end2; p += 16) {
+    let t;
+    t = u8[p];   u8[p]   = u8[p+8];  u8[p+8]  = t;
+    t = u8[p+1]; u8[p+1] = u8[p+9];  u8[p+9]  = t;
+    t = u8[p+5]; u8[p+5] = u8[p+13]; u8[p+13] = t;
+    t = u8[p+6]; u8[p+6] = u8[p+14]; u8[p+14] = t;
+  }
+  return u8;
+}
+
+// ── Render one IMAGE element ──────────────────────────
+function renderImage(el, dat) {
+  const offset = +el.getAttribute('dataOffset');
+  const bpp    = +el.getAttribute('bpp');
+  const w      = +el.getAttribute('width');
+  const h      = +el.getAttribute('height');
+  const pitch  = +el.getAttribute('pitch');
+  const origW  = +el.getAttribute('originalWidth');
+  const origH  = +el.getAttribute('originalHeight');
+  const xOff   = +el.getAttribute('xOffset');
+  const yOff   = +el.getAttribute('yOffset');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = origW; canvas.height = origH;
+  const ctx = canvas.getContext('2d');
+  const id  = ctx.createImageData(origW, origH);
+  const px  = id.data;
+
+  if (bpp === 8) return canvas; // palette-indexed — skip (rare)
+
+  const B = bpp >> 3;
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const src = offset + row * pitch + col * B;
+      const dst = ((yOff + row) * origW + (xOff + col)) * 4;
+      px[dst]   = dat[src];
+      px[dst+1] = dat[src+1];
+      px[dst+2] = dat[src+2];
+      px[dst+3] = bpp === 32 ? dat[src+3] : 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  return canvas;
+}
+
+function tick() { return new Promise(r => setTimeout(r, 0)); }
+
+// ── State ─────────────────────────────────────────────
+const loadedFiles = {}; // stem → { bbk, dat }
+let allImages = [], selected = new Set(), currentImg = null;
+
+// ── File loading ──────────────────────────────────────
+function stem(name) { return name.replace(/\.[^.]+$/, '').toLowerCase(); }
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    const ext  = f.name.split('.').pop().toLowerCase();
+    const base = stem(f.name);
+    if (ext !== 'bbk' && ext !== 'dat') continue;
+    if (!loadedFiles[base]) loadedFiles[base] = { bbk: null, dat: null };
+    loadedFiles[base][ext] = f;
+  }
+  renderFileList();
+  document.getElementById('decode-btn').disabled =
+    !Object.values(loadedFiles).some(p => p.bbk && p.dat);
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  addFiles(e.target.files); e.target.value = '';
+});
+
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addFiles(e.dataTransfer.files); });
+
+function renderFileList() {
+  const fl = document.getElementById('file-list');
+  fl.innerHTML = '';
+  for (const [base, p] of Object.entries(loadedFiles)) {
+    const tag = document.createElement('div');
+    const paired = p.bbk && p.dat;
+    tag.className = 'file-tag ' + (paired ? 'paired' : 'unpaired');
+    tag.textContent = base + (paired ? ' ✓' : ' (incomplete)');
+    fl.appendChild(tag);
+  }
+}
+
+// ── Decode ────────────────────────────────────────────
+document.getElementById('decode-btn').addEventListener('click', async () => {
+  document.getElementById('decode-btn').disabled = true;
+  document.getElementById('export-btn').disabled = true;
+  document.getElementById('bar').style.display = 'none';
+  document.getElementById('grid').innerHTML = '';
+  allImages = []; selected.clear();
+  updateSelBtn();
+
+  const prog = document.getElementById('progress');
+  prog.style.display = 'block';
+
+  const pairs = Object.entries(loadedFiles).filter(([, p]) => p.bbk && p.dat);
+
+  for (let pi = 0; pi < pairs.length; pi++) {
+    const [base, pair] = pairs[pi];
+    setProgress(0, `Reading ${base}…`);
+
+    const [bbkBuf, datBuf] = await Promise.all([pair.bbk.arrayBuffer(), pair.dat.arrayBuffer()]);
+    await tick();
+
+    const bbkU8  = ptdTransform(bbkBuf);
+    const datU8  = new Uint8Array(datBuf); // DAT is raw — no transform needed
+    const xml    = new DOMParser().parseFromString(new TextDecoder('ascii').decode(bbkU8), 'text/xml');
+    const els    = Array.from(xml.querySelectorAll('IMAGE'));
+    const CHUNK  = 30;
+
+    for (let i = 0; i < els.length; i += CHUNK) {
+      for (const el of els.slice(i, i + CHUNK)) {
+        const canvas = renderImage(el, datU8);
+        allImages.push({
+          name:   el.getAttribute('name'),
+          canvas,
+          origW:  +el.getAttribute('originalWidth'),
+          origH:  +el.getAttribute('originalHeight'),
+          bpp:    +el.getAttribute('bpp'),
+          source: base,
+        });
+      }
+      const pct = Math.round(((pi + (i + CHUNK) / els.length) / pairs.length) * 100);
+      setProgress(Math.min(pct, 99), `${base}: ${Math.min(i + CHUNK, els.length)} / ${els.length}`);
+      await tick();
+    }
+  }
+
+  setProgress(100, `Done — ${allImages.length} icons`);
+  await tick();
+  prog.style.display = 'none';
+  renderGrid(allImages);
+  document.getElementById('bar').style.display = 'flex';
+  document.getElementById('export-btn').disabled = false;
+  document.getElementById('decode-btn').disabled = false;
+});
+
+function setProgress(pct, msg) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-msg').textContent = msg;
+}
+
+// ── Grid ──────────────────────────────────────────────
+function renderGrid(imgs) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  document.getElementById('stats').textContent = `${imgs.length} / ${allImages.length}`;
+
+  if (!imgs.length) {
+    const e = document.createElement('div');
+    e.id = 'empty'; e.textContent = 'No images match.';
+    grid.appendChild(e); return;
+  }
+
+  imgs.forEach(img => {
+    const idx  = allImages.indexOf(img);
+    const card = document.createElement('div');
+    card.className = 'card' + (selected.has(idx) ? ' sel' : '');
+
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    const sc = Math.min(72 / img.origW, 72 / img.origH, 1);
+    const tc = document.createElement('canvas');
+    tc.width  = Math.max(1, Math.round(img.origW * sc));
+    tc.height = Math.max(1, Math.round(img.origH * sc));
+    tc.getContext('2d').drawImage(img.canvas, 0, 0, tc.width, tc.height);
+    thumb.appendChild(tc);
+
+    const nm = document.createElement('div');
+    nm.className = 'card-name';
+    nm.textContent = img.name;
+
+    card.appendChild(thumb);
+    card.appendChild(nm);
+
+    card.addEventListener('click', e => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        selected.has(idx) ? selected.delete(idx) : selected.add(idx);
+        card.classList.toggle('sel');
+        updateSelBtn();
+      } else {
+        openModal(img);
+      }
+    });
+
+    grid.appendChild(card);
+  });
+}
+
+function updateSelBtn() {
+  document.getElementById('export-sel-btn').disabled = selected.size === 0;
+}
+
+document.getElementById('search').addEventListener('input', () => {
+  const q = document.getElementById('search').value.toLowerCase();
+  renderGrid(q ? allImages.filter(i => i.name.toLowerCase().includes(q)) : allImages);
+});
+
+// ── Modal ─────────────────────────────────────────────
+function openModal(img) {
+  currentImg = img;
+  document.getElementById('modal-name').textContent = img.name;
+  const mc = document.getElementById('modal-canvas');
+  mc.width = img.origW; mc.height = img.origH;
+  mc.getContext('2d').drawImage(img.canvas, 0, 0);
+  document.getElementById('modal-size').textContent = `${img.origW}×${img.origH}px`;
+  document.getElementById('modal-bpp').textContent  = `${img.bpp}bpp`;
+  document.getElementById('modal-src').textContent  = img.source;
+  document.getElementById('modal').classList.add('open');
+}
+
+document.getElementById('modal-close').addEventListener('click', () =>
+  document.getElementById('modal').classList.remove('open'));
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal'))
+    document.getElementById('modal').classList.remove('open');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('modal').classList.remove('open');
+});
+document.getElementById('dl-btn').addEventListener('click', () => {
+  if (!currentImg) return;
+  const a = document.createElement('a');
+  a.href = currentImg.canvas.toDataURL('image/png');
+  a.download = currentImg.name + '.png';
+  a.click();
+});
+
+// ── ZIP export ────────────────────────────────────────
+async function exportZip(imgs, filename) {
+  const prog = document.getElementById('progress');
+  prog.style.display = 'block';
+  const zip = new JSZip();
+  for (let i = 0; i < imgs.length; i++) {
+    const img = imgs[i];
+    setProgress(Math.round(i / imgs.length * 95), `Packing ${img.name}…`);
+    await tick();
+    const blob = await new Promise(r => img.canvas.toBlob(r, 'image/png'));
+    zip.folder(img.source).file(img.name + '.png', await blob.arrayBuffer());
+  }
+  setProgress(99, 'Compressing…');
+  const content = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  prog.style.display = 'none';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = filename;
+  a.click();
+}
+
+document.getElementById('export-btn').addEventListener('click', () =>
+  exportZip(allImages, 'ptd_icons.zip'));
+document.getElementById('export-sel-btn').addEventListener('click', () =>
+  exportZip([...selected].map(i => allImages[i]), 'ptd_icons_selected.zip'));
+document.getElementById('clear-btn').addEventListener('click', () => location.reload());
+</script>
+</body>
+</html>
